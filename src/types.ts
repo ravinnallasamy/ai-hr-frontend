@@ -22,11 +22,12 @@ export interface Resume {
 
 /* AI answer from backend */
 export interface AIGeneratedAnswer {
-  brief_summary?: string;
-  detailed_answer?: string;
-  bullet_points?: string[];
-  suggested_followups?: string[];
+  brief_summary: string;
+  detailed_answer: string;
+  bullet_points?: string[]; // made optional
+  suggested_followups?: string[]; // made optional
 }
+
 
 /* History log: handle both JSON string and object */
 export interface QuestionLog {
@@ -68,25 +69,24 @@ export interface ScrapedData {
     education?: string[];
     experience?: string[];
     recent_activity?: string[];
-    error?: string;
+    error?: string; // IMPORTANT
   };
-
   github?: {
     bio?: string;
     top_repos?: {
-      name?: string;
-      description?: string;
-      stars?: number;
-      language?: string;
+      name: string;
+      description: string;
+      stars: number;
+      language: string;
     }[];
-    error?: string;
+    error?: string; // IMPORTANT
   };
-
   portfolio?: {
     projects?: {
-      title?: string;
-      description?: string;
+      title: string;
+      description: string;
     }[];
-    error?: string;
+    error?: string; // IMPORTANT
   };
 }
+
