@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   UserProfile,
-  ScrapedData,
   AIGeneratedAnswer,
   QuestionLog,
   Resume,
-} from '../types';
+} from '../types';   // ✅ Removed ScrapedData import
 import { apiService } from '../services/api';
 import VoiceInput from '../components/VoiceInput';
 import {
@@ -16,17 +15,38 @@ import {
   SendIcon,
 } from '../components/icons';
 
-interface UserDetailsProps {
-  user: UserProfile;
-  onBack: () => void;
-}
+// -----------------------------------------------------------------------------------
+// SAFE TYPES (to avoid TS2559 errors)
+// -----------------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------------------------------------------------
-// FIX 1: Add 'error' type inside scrapedData to match backend.
-// ---------------------------------------------------------------------------------------------------------------------
-type SafeLinkedIn = ScrapedData['linkedin'] & { error?: string };
-type SafeGithub = ScrapedData['github'] & { error?: string };
-type SafePortfolio = ScrapedData['portfolio'] & { error?: string };
+type SafeLinkedIn = {
+  summary?: string;
+  current_role?: string;
+  skills?: string[];
+  education?: string[];
+  experience?: string[];
+  recent_activity?: string[];
+  error?: string;
+};
+
+type SafeGithub = {
+  bio?: string;
+  top_repos?: {
+    name?: string;
+    description?: string;
+    stars?: number;
+    language?: string;
+  }[];
+  error?: string;
+};
+
+type SafePortfolio = {
+  projects?: {
+    title?: string;
+    description?: string;
+  }[];
+  error?: string;
+};
 
 interface SafeScraped {
   linkedin?: SafeLinkedIn;
@@ -34,48 +54,53 @@ interface SafeScraped {
   portfolio?: SafePortfolio;
 }
 
-// ---------------------------------------------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------------
+
+interface UserDetailsProps {
+  user: UserProfile;
+  onBack: () => void;
+}
 
 const statusColorMap = {
-  Pending:
-    'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300',
-  Approved:
-    'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
+  Pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300',
+  Approved: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
   Rejected: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
 };
 
-// Helper safely resolving resume from array/object
+// SAFE resume resolver
 const resolveResume = (user: UserProfile): Resume | null => {
-  if (Array.isArray(user.resumes) && user.resumes.length > 0)
-    return user.resumes[0];
-
+  if (Array.isArray(user.resumes) && user.resumes.length > 0) return user.resumes[0];
   if (user.resumes && typeof user.resumes === 'object' && 'resume_url' in user.resumes)
     return user.resumes;
-
   if (user.resume) return user.resume;
-
   return null;
 };
 
 export default function UserDetails({ user, onBack }: UserDetailsProps) {
   const [scrapedData, setScrapedData] = useState<SafeScraped | null>(null);
   const [isScraping, setIsScraping] = useState(false);
+
   const [question, setQuestion] = useState('');
   const [isAsking, setIsAsking] = useState(false);
   const [aiAnswer, setAiAnswer] = useState<AIGeneratedAnswer | null>(null);
   const [aiError, setAiError] = useState('');
-  const [qAndAHistory, setQAndAHistory] = useState<QuestionLog[]>(
-    user.questions_logs || []
-  );
+
+  const [qAndAHistory, setQAndAHistory] = useState<QuestionLog[]>(user.questions_logs || []);
   const [currentStatus, setCurrentStatus] = useState<
     'Pending' | 'Approved' | 'Rejected'
   >(user.status);
+
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // -----------------------------------------------------------------------------------
+  // FETCH SCRAPED DATA (SAFE VERSION)
+  // -----------------------------------------------------------------------------------
 
   const fetchScrapedData = useCallback(async () => {
     setIsScraping(true);
+
     try {
-      const [linkedinRes, githubRes, portfolioRes] = await Promise.allSettled([
+      const [linkedinRes, githubRes, portfolioRes] = await Promise.allSettled<any>([
         user.links?.linkedin_url
           ? apiService.scrapeUserData(user.user_id, 'linkedin')
           : Promise.resolve(null),
@@ -89,14 +114,18 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
 
       const safe: SafeScraped = {};
 
-      if (linkedinRes.status === 'fulfilled') safe.linkedin = linkedinRes.value.data;
-      if (githubRes.status === 'fulfilled') safe.github = githubRes.value.data;
-      if (portfolioRes.status === 'fulfilled')
+      if (linkedinRes.status === 'fulfilled' && linkedinRes.value?.data)
+        safe.linkedin = linkedinRes.value.data;
+
+      if (githubRes.status === 'fulfilled' && githubRes.value?.data)
+        safe.github = githubRes.value.data;
+
+      if (portfolioRes.status === 'fulfilled' && portfolioRes.value?.data)
         safe.portfolio = portfolioRes.value.data;
 
       setScrapedData(safe);
-    } catch (error) {
-      console.error('Scraping failed:', error);
+    } catch (err) {
+      console.error('Scraping failed:', err);
     } finally {
       setIsScraping(false);
     }
@@ -106,9 +135,9 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
     fetchScrapedData();
   }, [fetchScrapedData]);
 
-  // ---------------------------------------------------------------------------------------------------------------------
-  // FIX: Ask Question — ensures resume is always safe typed
-  // ---------------------------------------------------------------------------------------------------------------------
+  // -----------------------------------------------------------------------------------
+  // ASK AI QUESTION
+  // -----------------------------------------------------------------------------------
 
   const handleAskQuestion = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -135,26 +164,24 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
 
       setQAndAHistory((prev) => [newLog, ...prev]);
       setQuestion('');
-    } catch (error) {
-      setAiError(error instanceof Error ? error.message : 'Unknown error');
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setIsAsking(false);
     }
   };
 
-  // ---------------------------------------------------------------------------------------------------------------------
+  // -----------------------------------------------------------------------------------
+  // STATUS UPDATE
+  // -----------------------------------------------------------------------------------
 
-  const handleStatusUpdate = async (
-    newStatus: 'Pending' | 'Approved' | 'Rejected'
-  ) => {
-    if (currentStatus === newStatus || isUpdatingStatus) return;
+  const handleStatusUpdate = async (newStatus: 'Pending' | 'Approved' | 'Rejected') => {
+    if (isUpdatingStatus || currentStatus === newStatus) return;
 
     setIsUpdatingStatus(true);
+
     try {
-      const updatedUser = await apiService.updateUserStatus(
-        user.user_id,
-        newStatus
-      );
+      const updatedUser = await apiService.updateUserStatus(user.user_id, newStatus);
       setCurrentStatus(updatedUser.status || newStatus);
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to update');
@@ -167,13 +194,11 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      {/* Header */}
+      
+      {/* HEADER */}
       <header className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center">
-          <button
-            onClick={onBack}
-            className="mr-4 p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
-          >
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center">
+          <button onClick={onBack} className="mr-4 p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full">
             <ArrowLeftIcon />
           </button>
 
@@ -182,43 +207,19 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
             <p className="text-sm text-gray-500">{user.email}</p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span
-              className={`px-3 py-1 text-sm font-medium rounded-full ${
-                statusColorMap[currentStatus]
-              }`}
-            >
-              {currentStatus}
-            </span>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleStatusUpdate('Approved')}
-                disabled={isUpdatingStatus || currentStatus === 'Approved'}
-                className="px-4 py-2 bg-green-500 text-white rounded disabled:bg-gray-400"
-              >
-                {isUpdatingStatus ? 'Updating...' : 'Accept'}
-              </button>
-
-              <button
-                onClick={() => handleStatusUpdate('Rejected')}
-                disabled={isUpdatingStatus || currentStatus === 'Rejected'}
-                className="px-4 py-2 bg-red-500 text-white rounded disabled:bg-gray-400"
-              >
-                {isUpdatingStatus ? 'Updating...' : 'Reject'}
-              </button>
-            </div>
-          </div>
+          <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColorMap[currentStatus]}`}>
+            {currentStatus}
+          </span>
         </div>
       </header>
 
       {/* MAIN GRID */}
       <main className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 px-4 py-8">
 
-        {/* ------------------------------------------------ LEFT COLUMN ------------------------------------------------ */}
+        {/* LEFT COLUMN */}
         <div className="lg:col-span-2 space-y-8">
 
-          {/* Ask AI Section */}
+          {/* ASK AI */}
           <div className="bg-white dark:bg-gray-800 p-6 rounded shadow">
             <h2 className="text-xl font-semibold">Ask AI Interview Question</h2>
 
@@ -233,7 +234,6 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
                     : 'Cannot ask question without a resume.'
                 }
                 className="flex-grow border p-3 rounded dark:bg-gray-700"
-                rows={2}
               />
 
               <VoiceInput onTranscriptChange={setQuestion} isAsking={isAsking} />
@@ -247,20 +247,15 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
               </button>
             </form>
 
-            {isAsking && (
-              <p className="mt-3 text-gray-500">Generating answer...</p>
-            )}
-
+            {isAsking && <p className="mt-3 text-gray-500">Generating answer...</p>}
             {aiError && <p className="mt-3 text-red-500">{aiError}</p>}
 
             {aiAnswer && (
               <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded">
-                <h3 className="font-semibold">AI Generated Answer</h3>
+                <h3 className="font-semibold">AI Answer</h3>
 
                 <p className="italic mt-2">{aiAnswer.brief_summary}</p>
-                <p className="mt-2 whitespace-pre-wrap">
-                  {aiAnswer.detailed_answer}
-                </p>
+                <p className="mt-2 whitespace-pre-wrap">{aiAnswer.detailed_answer}</p>
 
                 {aiAnswer.bullet_points?.length > 0 && (
                   <ul className="list-disc list-inside mt-2">
@@ -286,7 +281,7 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
 
           {/* Q&A HISTORY */}
           <div className="bg-white dark:bg-gray-800 p-6 rounded shadow">
-            <h2 className="text-xl font-semibold">Question & Answer History</h2>
+            <h2 className="text-xl font-semibold">Question History</h2>
 
             <div className="mt-4 space-y-3 max-h-96 overflow-y-auto">
               {qAndAHistory.length > 0 ? (
@@ -302,22 +297,18 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
                       className="p-4 border-l-4 border-blue-500 bg-gray-50 dark:bg-gray-700 rounded"
                     >
                       <p className="font-semibold">{log.question}</p>
-                      <p className="italic text-sm mt-1">
-                        {answer?.brief_summary}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {new Date(log.created_at).toLocaleString()}
-                      </p>
+                      <p className="italic text-sm mt-1">{answer?.brief_summary}</p>
+                      <p className="text-xs text-gray-400">{new Date(log.created_at).toLocaleString()}</p>
                     </div>
                   );
                 })
               ) : (
-                <p className="text-gray-500">No questions asked yet.</p>
+                <p className="text-gray-500">No questions yet.</p>
               )}
             </div>
           </div>
 
-          {/* Resume Viewer */}
+          {/* RESUME VIEWER */}
           <div className="bg-white dark:bg-gray-800 rounded shadow overflow-hidden">
             <h2 className="text-xl font-semibold p-6">Resume</h2>
 
@@ -326,17 +317,14 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
                 src={resume.resume_url}
                 className="w-full h-[700px]"
                 title="Resume"
-                onError={() => console.error('Resume failed to load')}
               />
             ) : (
-              <p className="p-6 text-gray-500">
-                This candidate has not uploaded a resume.
-              </p>
+              <p className="p-6 text-gray-500">This candidate has no resume.</p>
             )}
           </div>
         </div>
 
-        {/* ------------------------------------------------ RIGHT COLUMN ------------------------------------------------ */}
+        {/* RIGHT COLUMN */}
         <div className="space-y-8">
 
           {/* LINKS */}
@@ -345,11 +333,7 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
 
             <div className="space-y-3">
               {user.links?.linkedin_url ? (
-                <a
-                  href={user.links.linkedin_url}
-                  target="_blank"
-                  className="flex items-center gap-2 text-blue-600"
-                >
+                <a href={user.links.linkedin_url} target="_blank" className="flex items-center gap-2 text-blue-600">
                   <LinkedInIcon /> LinkedIn
                 </a>
               ) : (
@@ -357,11 +341,7 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
               )}
 
               {user.links?.github_url ? (
-                <a
-                  href={user.links.github_url}
-                  target="_blank"
-                  className="flex items-center gap-2 text-blue-600"
-                >
+                <a href={user.links.github_url} target="_blank" className="flex items-center gap-2 text-blue-600">
                   <GithubIcon /> GitHub
                 </a>
               ) : (
@@ -369,11 +349,7 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
               )}
 
               {user.links?.portfolio_url ? (
-                <a
-                  href={user.links.portfolio_url}
-                  target="_blank"
-                  className="flex items-center gap-2 text-blue-600"
-                >
+                <a href={user.links.portfolio_url} target="_blank" className="flex items-center gap-2 text-blue-600">
                   <PortfolioIcon /> Portfolio
                 </a>
               ) : (
@@ -386,15 +362,13 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
           <div className="bg-white dark:bg-gray-800 p-6 rounded shadow">
             <h2 className="text-xl font-semibold mb-4">Scraped Data</h2>
 
-            {isScraping && (
-              <p className="text-gray-500">Loading scraped data...</p>
-            )}
+            {isScraping && <p className="text-gray-500">Loading...</p>}
 
             {!isScraping && scrapedData && (
-              <div className="space-y-6 text-sm max-h-[600px] overflow-y-auto">
+              <div className="space-y-6 max-h-[600px] overflow-y-auto">
                 
                 {/* LinkedIn */}
-                {scrapedData.linkedin && !scrapedData.linkedin.error && (
+                {scrapedData.linkedin && (
                   <div>
                     <h3 className="font-semibold text-lg flex items-center gap-2">
                       <LinkedInIcon /> LinkedIn
@@ -406,46 +380,42 @@ export default function UserDetails({ user, onBack }: UserDetailsProps) {
                   </div>
                 )}
 
-                {/* Github */}
-                {scrapedData.github && !scrapedData.github.error && (
+                {/* GitHub */}
+                {scrapedData.github && (
                   <div>
                     <h3 className="font-semibold text-lg flex items-center gap-2">
                       <GithubIcon /> GitHub
                     </h3>
-
-                    {scrapedData.github.bio && (
-                      <p className="mt-2">{scrapedData.github.bio}</p>
-                    )}
+                    {scrapedData.github.bio && <p className="mt-2">{scrapedData.github.bio}</p>}
                   </div>
                 )}
 
                 {/* Portfolio */}
-                {scrapedData.portfolio && !scrapedData.portfolio.error && (
+                {scrapedData.portfolio && scrapedData.portfolio.projects?.length > 0 && (
                   <div>
                     <h3 className="font-semibold text-lg flex items-center gap-2">
                       <PortfolioIcon /> Portfolio
                     </h3>
 
-                    {(scrapedData.portfolio.projects || []).map((p, i) => (
+                    {scrapedData.portfolio.projects.map((proj, i) => (
                       <div key={i} className="mt-2">
-                        <p className="font-semibold">{p.title}</p>
-                        <p className="text-sm">{p.description}</p>
+                        <p className="font-semibold">{proj.title}</p>
+                        <p>{proj.description}</p>
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* If NO DATA */}
+                {/* No Data */}
                 {!scrapedData.linkedin &&
                   !scrapedData.github &&
                   !scrapedData.portfolio && (
-                    <p className="text-gray-400 text-center">
-                      No scraped data available.
-                    </p>
+                    <p className="text-gray-400 text-center">No scraped data available.</p>
                   )}
               </div>
             )}
           </div>
+
         </div>
       </main>
     </div>
