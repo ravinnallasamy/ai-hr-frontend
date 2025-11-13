@@ -1,48 +1,29 @@
 export interface Links {
   id: string;
   user_id: string;
-  linkedin_url?: string | null;
-  github_url?: string | null;
-  portfolio_url?: string | null;
-  other_url?: string | null;
+  linkedin_url: string;
+  github_url: string;
+  portfolio_url: string;
+  other_url: string;
 }
 
-/* Resume may come as:
-   ↳ array of resumes
-   ↳ single resume object
-   ↳ or empty
-*/
 export interface Resume {
-  id?: string;
-  user_id?: string;
-  resume_url?: string;
-  extracted_text?: string;
-  created_at?: string;
+  id: string;
+  user_id: string;
+  resume_url: string;
+  extracted_text: string;
+  created_at: string;
 }
 
-/* AI answer from backend */
-export interface AIGeneratedAnswer {
-  brief_summary: string;
-  detailed_answer: string;
-  bullet_points?: string[]; // made optional
-  suggested_followups?: string[]; // made optional
-}
-
-
-/* History log: handle both JSON string and object */
 export interface QuestionLog {
   id: string;
   hr_id: string;
   user_id: string;
   question: string;
-
-  // Backend might return string or object
-  answer: AIGeneratedAnswer | string;
-
+  answer: AIGeneratedAnswer | string;   // backend may return string JSON
   created_at: string;
 }
 
-/* User info */
 export interface UserProfile {
   id: string;
   user_id: string;
@@ -50,17 +31,16 @@ export interface UserProfile {
   email: string;
   status: 'Pending' | 'Approved' | 'Rejected';
   created_at: string;
-
   links?: Links;
-
-  // Support ALL possible resume formats
-  resume?: Resume | null;
-  resumes?: Resume[] | Resume | null;
-
+  resume?: Resume;
+  resumes?: Resume[] | Resume;
   questions_logs?: QuestionLog[];
 }
 
-/* Scraped data: all OPTIONAL, allow errors from backend */
+/* ---------------------------------------------------------------------------
+   FINAL FIXED SCRAPED DATA TYPE
+--------------------------------------------------------------------------- */
+
 export interface ScrapedData {
   linkedin?: {
     summary?: string;
@@ -69,7 +49,7 @@ export interface ScrapedData {
     education?: string[];
     experience?: string[];
     recent_activity?: string[];
-    error?: string; // IMPORTANT
+    error?: string;
   };
   github?: {
     bio?: string;
@@ -79,14 +59,23 @@ export interface ScrapedData {
       stars: number;
       language: string;
     }[];
-    error?: string; // IMPORTANT
+    error?: string;
   };
   portfolio?: {
     projects?: {
       title: string;
       description: string;
     }[];
-    error?: string; // IMPORTANT
+    error?: string;
   };
 }
 
+/* ---------------------------------------------------------------------------
+   AI ANSWER
+--------------------------------------------------------------------------- */
+export interface AIGeneratedAnswer {
+  brief_summary: string;
+  detailed_answer: string;
+  bullet_points?: string[];
+  suggested_followups?: string[];
+}
